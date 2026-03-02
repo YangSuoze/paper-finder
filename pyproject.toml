@@ -4,21 +4,62 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paper-finder"
-version = "0.1.0"
-description = "Paper finder CLI for arXiv + Semantic Scholar"
+version = "0.2.0"
+description = "Production-quality CLI for searching and exporting papers from arXiv and Semantic Scholar"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
-authors = [{name="YangSuoze"}]
+license = { text = "MIT" }
+authors = [{ name = "YangSuoze" }]
 dependencies = [
-  "typer[all]",
-  "httpx",
-  "pydantic",
-  "rich"
+  "httpx>=0.27,<1.0",
+  "pydantic>=2.7,<3.0",
+  "typer>=0.12,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10,<2.0",
+  "pytest>=8.0,<9.0",
+  "ruff>=0.6,<1.0",
 ]
 
 [project.scripts]
 paper-finder = "paper_finder.cli:main"
 
+[tool.setuptools.packages.find]
+include = ["paper_finder*"]
+
 [tool.pytest.ini_options]
+addopts = "-q"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["paper_finder", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "N", "C4", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+strict_equality = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false

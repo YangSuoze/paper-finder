@@ -1,6 +1,17 @@
 # paper-finder
 
-A clean, production-style CLI to search papers from **arXiv** and **Semantic Scholar**.
+Production-quality Python CLI for finding papers from **arXiv** and **Semantic Scholar**.
+
+## Features
+
+- Search arXiv
+- Search Semantic Scholar (requires `SEMANTIC_SCHOLAR_API_KEY`)
+- Fetch one paper as JSON via `get`:
+  - arXiv id (for example `2501.01234`)
+  - DOI (for Semantic Scholar)
+- Export BibTeX via `export`:
+  - arXiv: official arXiv BibTeX endpoint
+  - Semantic Scholar: provider BibTeX when available, fallback generated BibTeX
 
 ## Install (dev)
 
@@ -8,35 +19,61 @@ A clean, production-style CLI to search papers from **arXiv** and **Semantic Sch
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -U pip
-pip install -r requirements.txt -r requirements-dev.txt
-pip install -e .
+pip install -e '.[dev]'
+```
+
+## Configuration
+
+Semantic Scholar access key:
+
+```bash
+export SEMANTIC_SCHOLAR_API_KEY=your_key_here
+```
+
+Optional HTTP tuning:
+
+```bash
+export PAPER_FINDER_HTTP_TIMEOUT=20
+export PAPER_FINDER_HTTP_MAX_RETRIES=3
+export PAPER_FINDER_HTTP_BACKOFF=0.5
 ```
 
 ## Usage
 
-### arXiv
-```bash
-paper-finder search "openclaw codex agent" -s arxiv -n 5
-```
-
-### Semantic Scholar
-Set API key as env var (optional but recommended):
+### Search
 
 ```bash
-export SEMANTIC_SCHOLAR_API_KEY=... 
-paper-finder search "openclaw codex agent" -s semantic_scholar -n 5
+paper-finder search "agent orchestration" -s arxiv -n 5
+paper-finder search "agent orchestration" -s semantic_scholar -n 5
+paper-finder search "agent orchestration" -s all -n 5
+paper-finder search "openclaw" -s arxiv -n 3 --jsonl
 ```
 
-### All sources
+### Get (JSON)
+
 ```bash
-paper-finder search "agent orchestration" -s all -n 10
+paper-finder get 2501.01234
+paper-finder get 10.1038/nature12373
+paper-finder get 10.1038/nature12373 --source semantic_scholar
 ```
 
-### JSONL output
+### Export (BibTeX)
+
 ```bash
-paper-finder search "openclaw" -s arxiv -n 5 --jsonl
+paper-finder export 2501.01234
+paper-finder export 10.1038/nature12373
+paper-finder export 2501.01234 --source arxiv
 ```
 
-## Notes
-- arXiv uses the official Atom API: https://export.arxiv.org/api_help/docs/user-manual.html
-- Semantic Scholar Graph API: https://api.semanticscholar.org/
+## Development checks
+
+```bash
+ruff format --check .
+ruff check .
+mypy paper_finder
+pytest
+```
+
+## License
+
+MIT (see [LICENSE](LICENSE)).
