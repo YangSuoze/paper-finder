@@ -20,6 +20,32 @@ _ARXIV_FEED = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 </feed>
 """
 
+_ARXIV_FILTER_FEED = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:arxiv=\"http://arxiv.org/schemas/atom\">
+  <entry>
+    <id>http://arxiv.org/abs/2401.00001v1</id>
+    <published>2024-01-03T00:00:00Z</published>
+    <title>Recent One</title>
+    <summary>Recent paper one</summary>
+    <author><name>Alice</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2301.00002v1</id>
+    <published>2023-01-03T00:00:00Z</published>
+    <title>Older One</title>
+    <summary>Old paper</summary>
+    <author><name>Bob</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2501.00003v1</id>
+    <published>2025-01-03T00:00:00Z</published>
+    <title>Recent Two</title>
+    <summary>Recent paper two</summary>
+    <author><name>Carol</name></author>
+  </entry>
+</feed>
+"""
+
 _EMPTY_FEED = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:arxiv=\"http://arxiv.org/schemas/atom\"></feed>
 """
@@ -31,12 +57,22 @@ _BIBTEX = """@misc{smith2025impact,
 }"""
 
 
-def _build_client() -> HttpClient:
+def _build_client(
+    *,
+    search_feed: str = _ARXIV_FEED,
+    search_max_results: list[int] | None = None,
+) -> HttpClient:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/query":
-            if request.url.params.get("id_list") == "0000.00000":
+            id_list = request.url.params.get("id_list")
+            if id_list == "0000.00000":
                 return httpx.Response(200, text=_EMPTY_FEED)
-            return httpx.Response(200, text=_ARXIV_FEED)
+            if id_list:
+                return httpx.Response(200, text=_ARXIV_FEED)
+            if search_max_results is not None:
+                max_results = request.url.params.get("max_results")
+                search_max_results.append(int(max_results) if max_results is not None else -1)
+            return httpx.Response(200, text=search_feed)
         if request.url.path == "/bibtex/2501.01234":
             return httpx.Response(200, text=_BIBTEX)
         return httpx.Response(404, text="not found")
@@ -75,3 +111,24 @@ def test_arxiv_export_bibtex() -> None:
 
     assert bibtex.startswith("@misc")
     assert "Impact of Tests" in bibtex
+
+
+def test_arxiv_search_filters_by_year_and_overfetches() -> None:
+    max_results_calls: list[int] = []
+    with _build_client(
+        search_feed=_ARXIV_FILTER_FEED, search_max_results=max_results_calls
+    ) as client:
+        papers = arxiv.search("impact tests", limit=2, client=client, since_year=2024)
+
+    assert max_results_calls == [10]
+    assert [paper.id for paper in papers] == ["2401.00001v1", "2501.00003v1"]
+
+
+def test_arxiv_search_overfetch_caps_at_200() -> None:
+    max_results_calls: list[int] = []
+    with _build_client(
+        search_feed=_ARXIV_FILTER_FEED, search_max_results=max_results_calls
+    ) as client:
+        _ = arxiv.search("impact tests", limit=50, client=client, since_year=2020)
+
+    assert max_results_calls == [200]

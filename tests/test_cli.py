@@ -44,7 +44,7 @@ def test_search_command_outputs_json_array(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,
         "_search_papers",
-        lambda query, limit, source, settings: [
+        lambda query, limit, source, settings, since_year=None, until_year=None: [
             Paper(source="arxiv", id="2501.01234", title="Title", authors=[Author(name="Ada")])
         ],
     )
@@ -61,3 +61,32 @@ def test_search_rejects_json_and_jsonl_together() -> None:
     result = runner.invoke(cli.app, ["search", "test", "--json", "--jsonl"])
     assert result.exit_code == 1
     assert "Choose either --json or --jsonl" in result.stderr
+
+
+def test_search_passes_year_filters(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "load_settings", lambda: Settings(semantic_scholar_api_key="k"))
+    captured: dict[str, int | None] = {"since_year": None, "until_year": None}
+
+    def fake_search(query, limit, source, settings, since_year=None, until_year=None):
+        _ = query, limit, source, settings
+        captured["since_year"] = since_year
+        captured["until_year"] = until_year
+        return []
+
+    monkeypatch.setattr(cli, "_search_papers", fake_search)
+
+    result = runner.invoke(
+        cli.app,
+        ["search", "test", "--since-year", "2020", "--until-year", "2024", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {"since_year": 2020, "until_year": 2024}
+
+
+def test_search_rejects_invalid_year_range() -> None:
+    result = runner.invoke(
+        cli.app, ["search", "test", "--since-year", "2025", "--until-year", "2024"]
+    )
+    assert result.exit_code == 1
+    assert "--since-year cannot be greater than --until-year" in result.stderr

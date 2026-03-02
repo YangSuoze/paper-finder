@@ -89,14 +89,49 @@ def _resolve_get_source(identifier: str, source: GetSource) -> GetSource:
     return GetSource.SEMANTIC_SCHOLAR
 
 
-def _search_papers(query: str, limit: int, source: SearchSource, settings: Settings) -> list[Paper]:
+def _validate_year_range(since_year: int | None, until_year: int | None) -> None:
+    if since_year is not None and since_year < 1:
+        raise InputError("--since-year must be greater than 0.")
+    if until_year is not None and until_year < 1:
+        raise InputError("--until-year must be greater than 0.")
+    if since_year is not None and until_year is not None and since_year > until_year:
+        raise InputError("--since-year cannot be greater than --until-year.")
+
+
+def _search_papers(
+    query: str,
+    limit: int,
+    source: SearchSource,
+    settings: Settings,
+    *,
+    since_year: int | None = None,
+    until_year: int | None = None,
+) -> list[Paper]:
+    _validate_year_range(since_year, until_year)
     papers: list[Paper] = []
     with _build_http_client(settings) as client:
         if source in {SearchSource.ARXIV, SearchSource.ALL}:
-            papers.extend(arxiv.search(query, limit=limit, client=client))
+            papers.extend(
+                arxiv.search(
+                    query,
+                    limit=limit,
+                    client=client,
+                    since_year=since_year,
+                    until_year=until_year,
+                )
+            )
         if source in {SearchSource.SEMANTIC_SCHOLAR, SearchSource.ALL}:
             key = _require_semantic_api_key(settings)
-            papers.extend(semantic_scholar.search(query, limit=limit, api_key=key, client=client))
+            papers.extend(
+                semantic_scholar.search(
+                    query,
+                    limit=limit,
+                    api_key=key,
+                    client=client,
+                    since_year=since_year,
+                    until_year=until_year,
+                )
+            )
     return papers
 
 
@@ -160,12 +195,27 @@ def search(
         bool,
         typer.Option("--json", help="Output a JSON array."),
     ] = False,
+    since_year: Annotated[
+        int | None,
+        typer.Option("--since-year", min=1, help="Inclusive lower bound publication year."),
+    ] = None,
+    until_year: Annotated[
+        int | None,
+        typer.Option("--until-year", min=1, help="Inclusive upper bound publication year."),
+    ] = None,
 ) -> None:
     """Search papers by query."""
     try:
         if json_output and jsonl:
             raise InputError("Choose either --json or --jsonl, not both.")
-        papers = _search_papers(query=query, limit=limit, source=source, settings=load_settings())
+        papers = _search_papers(
+            query=query,
+            limit=limit,
+            source=source,
+            settings=load_settings(),
+            since_year=since_year,
+            until_year=until_year,
+        )
     except PaperFinderError as exc:
         _error_and_exit(str(exc))
 

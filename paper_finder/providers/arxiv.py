@@ -90,14 +90,54 @@ def _parse_feed(xml_payload: str) -> list[Paper]:
     return papers
 
 
-def search(query: str, *, limit: int, client: HttpClient) -> list[Paper]:
+def _validate_year_range(since_year: int | None, until_year: int | None) -> None:
+    if since_year is not None and since_year < 1:
+        raise InputError("--since-year must be greater than 0.")
+    if until_year is not None and until_year < 1:
+        raise InputError("--until-year must be greater than 0.")
+    if since_year is not None and until_year is not None and since_year > until_year:
+        raise InputError("--since-year cannot be greater than --until-year.")
+
+
+def _matches_year_range(
+    paper: Paper, *, since_year: int | None = None, until_year: int | None = None
+) -> bool:
+    if since_year is None and until_year is None:
+        return True
+
+    if paper.year is None:
+        return False
+
+    if since_year is not None and paper.year < since_year:
+        return False
+    return not (until_year is not None and paper.year > until_year)
+
+
+def search(
+    query: str,
+    *,
+    limit: int,
+    client: HttpClient,
+    since_year: int | None = None,
+    until_year: int | None = None,
+) -> list[Paper]:
     if limit <= 0:
         raise InputError("--limit must be greater than 0.")
+    _validate_year_range(since_year, until_year)
 
-    params = {"search_query": f"all:{query}", "start": 0, "max_results": limit}
+    max_results = limit
+    if since_year is not None or until_year is not None:
+        max_results = min(limit * 5, 200)
+
+    params = {"search_query": f"all:{query}", "start": 0, "max_results": max_results}
     payload = client.get_text(_API_URL, provider=_PROVIDER, params=params)
     papers = _parse_feed(payload)
-    return papers[:limit]
+    filtered = [
+        paper
+        for paper in papers
+        if _matches_year_range(paper, since_year=since_year, until_year=until_year)
+    ]
+    return filtered[:limit]
 
 
 def get(arxiv_id: str, *, client: HttpClient) -> Paper:
