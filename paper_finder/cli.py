@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 
+from . import __version__
 from .config import Settings, load_settings
 from .errors import ConfigurationError, InputError, PaperFinderError
 from .http import HttpClient, RetryConfig
@@ -49,7 +50,7 @@ def _print_papers_table(papers: list[Paper]) -> None:
             typer.echo(f"    {paper.url}")
 
 
-def _print_json(payload: dict[str, object]) -> None:
+def _print_json(payload: object) -> None:
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
@@ -57,8 +58,16 @@ def _build_http_client(settings: Settings) -> HttpClient:
     retry = RetryConfig(
         max_retries=settings.http_max_retries,
         backoff_seconds=settings.http_backoff_seconds,
+        max_backoff_seconds=settings.http_max_backoff_seconds,
+        jitter_fraction=settings.http_jitter_fraction,
     )
     return HttpClient(timeout_seconds=settings.http_timeout_seconds, retry=retry)
+
+
+def _version_callback(show_version: bool) -> None:
+    if show_version:
+        typer.echo(__version__)
+        raise typer.Exit()
 
 
 def _require_semantic_api_key(settings: Settings) -> str:
@@ -111,6 +120,22 @@ def _export_bibtex(identifier: str, source: GetSource, settings: Settings) -> st
         )
 
 
+@app.callback()
+def main_callback(
+    show_version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show application version and exit.",
+        ),
+    ] = False,
+) -> None:
+    """Paper finder CLI."""
+    _ = show_version
+
+
 @app.command()
 def search(
     query: Annotated[str, typer.Argument(help="Search query.")],
@@ -131,12 +156,22 @@ def search(
         bool,
         typer.Option("--jsonl", help="Output one JSON document per line."),
     ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output a JSON array."),
+    ] = False,
 ) -> None:
     """Search papers by query."""
     try:
+        if json_output and jsonl:
+            raise InputError("Choose either --json or --jsonl, not both.")
         papers = _search_papers(query=query, limit=limit, source=source, settings=load_settings())
     except PaperFinderError as exc:
         _error_and_exit(str(exc))
+
+    if json_output:
+        _print_json([paper.model_dump(exclude_none=True) for paper in papers])
+        return
 
     if jsonl:
         for paper in papers:

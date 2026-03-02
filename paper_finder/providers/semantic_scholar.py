@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import quote
 
-from ..errors import ConfigurationError, NotFoundError, ProviderError
+from ..errors import ConfigurationError, InputError, NotFoundError, ProviderError
 from ..http import HttpClient
 from ..identifiers import normalize_doi
 from ..models import Author, Paper
@@ -36,6 +37,15 @@ def _as_int(value: Any) -> int | None:
     return None
 
 
+def _escape_bibtex_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+
+
+def _sanitize_bibtex_key(value: str) -> str:
+    sanitized = re.sub(r"[^a-z0-9]+", "", value.lower())
+    return sanitized or "paper"
+
+
 def _map_paper(item: dict[str, Any]) -> Paper:
     authors_raw = item.get("authors")
     authors: list[Author] = []
@@ -52,6 +62,11 @@ def _map_paper(item: dict[str, Any]) -> Paper:
     if isinstance(external_ids, dict):
         doi = _as_string(external_ids.get("DOI"))
 
+    pdf_url: str | None = None
+    open_access_pdf = item.get("openAccessPdf")
+    if isinstance(open_access_pdf, dict):
+        pdf_url = _as_string(open_access_pdf.get("url"))
+
     paper_id = _as_string(item.get("paperId")) or _as_string(item.get("url")) or ""
     return Paper(
         source="semantic_scholar",
@@ -59,6 +74,7 @@ def _map_paper(item: dict[str, Any]) -> Paper:
         title=_as_string(item.get("title")) or "",
         abstract=_as_string(item.get("abstract")),
         url=_as_string(item.get("url")),
+        pdf_url=pdf_url,
         year=_as_int(item.get("year")),
         doi=doi,
         authors=authors,
@@ -68,29 +84,32 @@ def _map_paper(item: dict[str, Any]) -> Paper:
 def _build_fallback_bibtex(paper: Paper, doi: str) -> str:
     author_names = " and ".join(author.name for author in paper.authors) or "Unknown"
     year = str(paper.year) if paper.year is not None else "unknown"
-    first_author = paper.authors[0].name.split()[-1].lower() if paper.authors else "unknown"
-    key = f"{first_author}{year}"
+    first_author = paper.authors[0].name.split()[-1] if paper.authors else "unknown"
+    key = _sanitize_bibtex_key(f"{first_author}{year}")
     title = paper.title or f"Paper for DOI {doi}"
 
     entries = [
-        f"  author = {{{author_names}}}",
-        f"  title = {{{title}}}",
-        f"  year = {{{year}}}",
-        f"  doi = {{{doi}}}",
+        f"  author = {{{_escape_bibtex_value(author_names)}}}",
+        f"  title = {{{_escape_bibtex_value(title)}}}",
+        f"  year = {{{_escape_bibtex_value(year)}}}",
+        f"  doi = {{{_escape_bibtex_value(doi)}}}",
     ]
     if paper.url:
-        entries.append(f"  url = {{{paper.url}}}")
+        entries.append(f"  url = {{{_escape_bibtex_value(paper.url)}}}")
 
     body = ",\n".join(entries)
     return f"@article{{{key},\n{body}\n}}"
 
 
 def search(query: str, *, limit: int, api_key: str | None, client: HttpClient) -> list[Paper]:
+    if limit <= 0:
+        raise InputError("--limit must be greater than 0.")
+
     key = _require_api_key(api_key)
     params = {
         "query": query,
         "limit": limit,
-        "fields": "title,abstract,url,year,authors,externalIds",
+        "fields": "title,abstract,url,openAccessPdf,year,authors,externalIds",
     }
     payload = client.get_json(
         f"{_BASE_URL}/paper/search",
@@ -120,7 +139,7 @@ def get_by_doi(doi: str, *, api_key: str | None, client: HttpClient) -> Paper:
         payload = client.get_json(
             f"{_BASE_URL}/paper/DOI:{encoded_doi}",
             provider=_PROVIDER,
-            params={"fields": "title,abstract,url,year,authors,externalIds"},
+            params={"fields": "title,abstract,url,openAccessPdf,year,authors,externalIds"},
             headers=_headers(key),
         )
     except NotFoundError as exc:

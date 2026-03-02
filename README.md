@@ -36,6 +36,8 @@ Optional HTTP tuning:
 export PAPER_FINDER_HTTP_TIMEOUT=20
 export PAPER_FINDER_HTTP_MAX_RETRIES=3
 export PAPER_FINDER_HTTP_BACKOFF=0.5
+export PAPER_FINDER_HTTP_MAX_BACKOFF=8
+export PAPER_FINDER_HTTP_JITTER=0.1
 ```
 
 ## Usage
@@ -43,10 +45,12 @@ export PAPER_FINDER_HTTP_BACKOFF=0.5
 ### Search
 
 ```bash
+paper-finder --version
 paper-finder search "agent orchestration" -s arxiv -n 5
 paper-finder search "agent orchestration" -s semantic_scholar -n 5
 paper-finder search "agent orchestration" -s all -n 5
 paper-finder search "openclaw" -s arxiv -n 3 --jsonl
+paper-finder search "openclaw" -s arxiv -n 3 --json
 ```
 
 ### Get (JSON)

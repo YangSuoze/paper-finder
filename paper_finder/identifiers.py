@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
+from urllib.parse import unquote, urlparse
 
 from .errors import InputError
 
@@ -12,7 +13,10 @@ _ARXIV_PATTERN = re.compile(
 )
 _DOI_PATTERN = re.compile(r"^10\.\d{4,9}/\S+$", re.IGNORECASE)
 _DOI_URL_PREFIX = "https://doi.org/"
+_DOI_URL_PREFIX_HTTP = "http://doi.org/"
 _DOI_DX_PREFIX = "http://dx.doi.org/"
+_DOI_DX_PREFIX_HTTPS = "https://dx.doi.org/"
+_DOI_PREFIX = "doi:"
 
 
 class IdentifierKind(StrEnum):
@@ -20,8 +24,23 @@ class IdentifierKind(StrEnum):
     DOI = "doi"
 
 
+def _normalize_arxiv_candidate(raw: str) -> str:
+    parsed = urlparse(raw)
+    if parsed.scheme in {"http", "https"} and parsed.netloc.lower().endswith("arxiv.org"):
+        path = unquote(parsed.path).strip("/")
+        lowered_path = path.lower()
+        if lowered_path.startswith("abs/"):
+            return path[4:]
+        if lowered_path.startswith("pdf/"):
+            candidate = path[4:]
+            if candidate.lower().endswith(".pdf"):
+                return candidate[:-4]
+            return candidate
+    return raw
+
+
 def normalize_arxiv_id(value: str) -> str:
-    raw = value.strip()
+    raw = _normalize_arxiv_candidate(value.strip())
     match = _ARXIV_PATTERN.fullmatch(raw)
     if not match:
         raise InputError(f'Invalid arXiv id: "{value}".')
@@ -29,12 +48,19 @@ def normalize_arxiv_id(value: str) -> str:
 
 
 def normalize_doi(value: str) -> str:
-    raw = value.strip()
+    raw = value.strip().strip("<>")
     lowered = raw.lower()
+    if lowered.startswith(_DOI_PREFIX):
+        raw = raw[len(_DOI_PREFIX) :].strip()
+        lowered = raw.lower()
     if lowered.startswith(_DOI_URL_PREFIX):
         raw = raw[len(_DOI_URL_PREFIX) :]
+    elif lowered.startswith(_DOI_URL_PREFIX_HTTP):
+        raw = raw[len(_DOI_URL_PREFIX_HTTP) :]
     elif lowered.startswith(_DOI_DX_PREFIX):
         raw = raw[len(_DOI_DX_PREFIX) :]
+    elif lowered.startswith(_DOI_DX_PREFIX_HTTPS):
+        raw = raw[len(_DOI_DX_PREFIX_HTTPS) :]
 
     if not _DOI_PATTERN.fullmatch(raw):
         raise InputError(f'Invalid DOI: "{value}".')

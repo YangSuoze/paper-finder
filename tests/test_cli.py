@@ -37,3 +37,27 @@ def test_export_command_outputs_bibtex(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "@article{key}"
+
+
+def test_search_command_outputs_json_array(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "load_settings", lambda: Settings(semantic_scholar_api_key="k"))
+    monkeypatch.setattr(
+        cli,
+        "_search_papers",
+        lambda query, limit, source, settings: [
+            Paper(source="arxiv", id="2501.01234", title="Title", authors=[Author(name="Ada")])
+        ],
+    )
+
+    result = runner.invoke(cli.app, ["search", "test", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    assert payload[0]["id"] == "2501.01234"
+
+
+def test_search_rejects_json_and_jsonl_together() -> None:
+    result = runner.invoke(cli.app, ["search", "test", "--json", "--jsonl"])
+    assert result.exit_code == 1
+    assert "Choose either --json or --jsonl" in result.stderr

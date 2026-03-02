@@ -2,7 +2,7 @@ from urllib.parse import unquote
 
 import httpx
 import pytest
-from paper_finder.errors import ConfigurationError, NotFoundError
+from paper_finder.errors import ConfigurationError, InputError, NotFoundError
 from paper_finder.http import HttpClient, RetryConfig
 from paper_finder.providers import semantic_scholar
 
@@ -21,6 +21,7 @@ def _build_client(*, include_bibtex: bool = True, not_found: bool = False) -> Ht
                             "title": "Neural Testing",
                             "abstract": "A paper about tests",
                             "url": "https://example.org/paper/abc123",
+                            "openAccessPdf": {"url": "https://example.org/paper/abc123.pdf"},
                             "year": 2024,
                             "authors": [{"name": "Ada Lovelace"}],
                             "externalIds": {"DOI": "10.1000/example"},
@@ -38,6 +39,7 @@ def _build_client(*, include_bibtex: bool = True, not_found: bool = False) -> Ht
                 "paperId": "abc123",
                 "title": "Neural Testing",
                 "url": "https://example.org/paper/abc123",
+                "openAccessPdf": {"url": "https://example.org/paper/abc123.pdf"},
                 "year": 2024,
                 "authors": [{"name": "Ada Lovelace"}],
                 "externalIds": {"DOI": doi},
@@ -66,6 +68,7 @@ def test_semantic_search_parses_papers() -> None:
     assert paper.source == "semantic_scholar"
     assert paper.id == "abc123"
     assert paper.doi == "10.1000/example"
+    assert paper.pdf_url == "https://example.org/paper/abc123.pdf"
 
 
 def test_semantic_get_by_doi() -> None:
@@ -99,6 +102,11 @@ def test_semantic_export_bibtex_fallback_builder() -> None:
 def test_semantic_commands_require_api_key() -> None:
     with _build_client() as client, pytest.raises(ConfigurationError):
         semantic_scholar.search("query", limit=1, api_key=None, client=client)
+
+
+def test_semantic_search_validates_limit() -> None:
+    with _build_client() as client, pytest.raises(InputError):
+        semantic_scholar.search("query", limit=0, api_key=_API_KEY, client=client)
 
 
 def test_semantic_get_not_found() -> None:

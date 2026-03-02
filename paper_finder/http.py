@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ import httpx
 
 from .errors import NotFoundError, ProviderError
 
-_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,7 @@ class RetryConfig:
     max_retries: int = 3
     backoff_seconds: float = 0.5
     max_backoff_seconds: float = 8.0
+    jitter_fraction: float = 0.1
 
 
 class HttpClient:
@@ -29,9 +31,11 @@ class HttpClient:
         transport: httpx.BaseTransport | None = None,
         user_agent: str = "paper-finder/0.2.0",
         sleep: Callable[[float], None] = time.sleep,
+        random_fn: Callable[[], float] = random.random,
     ) -> None:
         self._retry = retry or RetryConfig()
         self._sleep = sleep
+        self._random_fn = random_fn
         timeout = httpx.Timeout(timeout_seconds)
         self._client = httpx.Client(
             timeout=timeout, transport=transport, headers={"User-Agent": user_agent}
@@ -62,7 +66,7 @@ class HttpClient:
                 if attempt >= self._retry.max_retries:
                     raise ProviderError(
                         provider,
-                        f"{provider} request failed after {attempt + 1} attempts: {exc}",
+                        f"{provider} request to {url} failed after {attempt + 1} attempts: {exc}",
                     ) from exc
                 self._sleep(self._compute_backoff_seconds(attempt, None))
                 continue
@@ -82,7 +86,7 @@ class HttpClient:
                 suffix = f": {body[:300]}" if body else "."
                 raise ProviderError(
                     provider,
-                    f"{provider} API request failed with HTTP {response.status_code}{suffix}",
+                    f"{provider} API request to {url} failed with HTTP {response.status_code}{suffix}",
                     status_code=response.status_code,
                 )
 
@@ -127,7 +131,13 @@ class HttpClient:
                 return min(max(0.0, retry_after), self._retry.max_backoff_seconds)
 
         delay = self._retry.backoff_seconds * (2**attempt)
-        return float(min(delay, self._retry.max_backoff_seconds))
+        delay = float(min(delay, self._retry.max_backoff_seconds))
+        jitter_fraction = self._retry.jitter_fraction
+        if jitter_fraction <= 0 or delay <= 0:
+            return delay
+
+        jitter = delay * jitter_fraction * (self._random_fn() * 2 - 1)
+        return float(min(max(0.0, delay + jitter), self._retry.max_backoff_seconds))
 
     @staticmethod
     def _parse_retry_after(value: str | None) -> float | None:

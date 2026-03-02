@@ -67,3 +67,25 @@ def test_http_client_retries_transport_errors() -> None:
 
     assert payload == {"ok": True}
     assert calls["count"] == 3
+
+
+def test_http_client_applies_jitter_to_exponential_backoff() -> None:
+    calls = {"count": 0}
+    sleeps: list[float] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return httpx.Response(503, text="retry")
+        return httpx.Response(200, json={"ok": True})
+
+    with HttpClient(
+        retry=RetryConfig(max_retries=1, backoff_seconds=0.5, jitter_fraction=0.2),
+        transport=httpx.MockTransport(handler),
+        sleep=sleeps.append,
+        random_fn=lambda: 1.0,  # max positive jitter
+    ) as client:
+        payload = client.get_json("https://example.org/test", provider="example")
+
+    assert payload == {"ok": True}
+    assert sleeps == [pytest.approx(0.6)]
