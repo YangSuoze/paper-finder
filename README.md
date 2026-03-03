@@ -1,5 +1,7 @@
 # paper-finder
 
+中文版文档：README.zh-CN.md
+
 Production-quality Python CLI for finding papers from **arXiv** and **Semantic Scholar**.
 
 ## Features
